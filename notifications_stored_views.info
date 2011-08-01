@@ -1,0 +1,7 @@
+name = "Notifications Stored Views"
+description = "."
+package = "Notifications"
+core = "6.x"
+
+dependencies[] = "notifications"
+dependencies[] = "stored_views"

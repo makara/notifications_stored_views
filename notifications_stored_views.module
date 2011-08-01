@@ -1,0 +1,571 @@
+<?php
+/**
+ * @file
+ */
+
+/**
+ * Implementation of hook_views_api().
+ */
+function notifications_stored_views_views_api() {
+  return array(
+    'api' => '2.0',
+    'path' => drupal_get_path('module', 'notifications_stored_views') .'/views',
+  );
+}
+
+/**
+ * Implementation of hook_perm()
+ */
+function notifications_stored_views_perm() {
+  return array(
+    'subscribe to stored views',
+  );
+}
+
+/**
+ * Implementation of hook_notifications()
+ */
+function notifications_stored_views_notifications($op) {
+  switch ($op) {
+    case 'subscription types':
+      $types = array();
+
+      // Node views.
+      $types['stored_views_node'] = array(
+        'event_type' => 'node',
+        'title' => t('Node display'),
+        'description' => t('.'), // TODO
+        'access' => 'subscribe to stored views',
+        'fields' => array('stored_views_id'),
+      );
+
+      // MN data views.
+      $types['stored_views_mn_data'] = array(
+        'event_type' => 'mn_data',
+        'title' => t('Feed display'),
+        'description' => t('.'), // TODO
+        'access' => 'subscribe to stored views',
+        'fields' => array('stored_views_id'),
+      );
+      return $types;
+
+    case 'subscription fields':
+      $fields = array();
+
+      // Stored views.
+      $fields['stored_views_id'] = array(
+        'name' => t('Page'),
+        'field' => 'stored_views_id',
+        'type' => 'int',
+        'object_type' => 'stored_views',
+      );
+      return $fields;
+
+    case 'object types':
+      $types = array();
+      $types['stored_views'] = array(
+        'name' => t('Stored views'),
+        'key' => 'stored_views_id',
+        'load callback' => 'notifications_stored_views_object_load',
+        'format callback' => 'notifications_stored_views_object_format',
+        'access' => 'access content',
+      );
+      return $types;
+
+    case 'build methods':
+      $info = array();
+
+      // .
+      // TODO: ban other build methods.
+      $info['stored_views'] = array(
+        'type' => 'stored_views',
+        'name' => t('Stored views'),
+        'description' => t('.'),
+        'build callback' => 'notifications_stored_views_build',
+        'digest' => TRUE,
+      );
+      return $info;
+  }
+}
+
+/**
+ * Implementation of hook_notifications_event().
+ */
+function notifications_stored_views_notifications_event($op, $event, $account = NULL) {
+  switch ($op) {
+    case 'query':
+      $query = array();
+
+      switch ($event->typekey) {
+        case 'node-insert':
+        case 'mn_data-insert':
+          // All IDs.
+          // TODO: cache?
+          $id_array = array();
+          $result = db_query('SELECT id FROM {stored_views} ORDER BY id ASC');
+          while ($obj = db_fetch_object($result)) {
+            $id_array[] = $obj->id;
+          }
+          $query[]['fields'] = array('stored_views_id' => $id_array);
+          break;
+      }
+
+      return $query;
+  }
+}
+
+/**
+ * Implementation of hook_notifications_object_stored_views().
+ */
+function notifications_stored_views_notifications_object_stored_views($op, $stored_views, $account = NULL) {
+  switch ($op) {
+    case 'conditions':
+      return array(
+        'stored_views_id' => $stored_views->id,
+      );
+
+    case 'subscriptions':
+      $options = array();
+      if (empty($stored_views->views_base_table)) {
+        return $options;
+      }
+
+      if (!$account || user_access('subscribe to stored views', $account)) {
+        // Different subscription types.
+        switch ($stored_views->views_base_table) {
+          case 'node':
+            $options[] = array(
+              'name' => t('@title', array('@title' => $stored_views->title)),
+              'type' => 'stored_views_node',
+              'fields' => array('stored_views_id' => $stored_views->id),
+            );
+            break;
+
+          case 'feeds_data_syndication':
+            $options[] = array(
+              'name' => t('@title', array('@title' => $stored_views->title)),
+              'type' => 'stored_views_mn_data',
+              'fields' => array('stored_views_id' => $stored_views->id),
+            );
+            break;
+        }
+      }
+      return $options;
+  }
+}
+
+/**
+ * .
+ *
+ * @see Notifications_Message::build_simple().
+ */
+function notifications_stored_views_build($template, $events, $subscriptions, $module = 'notifications') {
+  $messages = array();
+
+//  var_dump($template, $events, $subscriptions, $module);
+//  var_dump($subscriptions);
+
+  // Callback router.
+  // $sub_simple = array("event id" => array(0 => "sub id"));
+  // $sub_views = array("sub id" => array("stored views id" => array(0 => "event"));
+  $sub_views = $sub_simple = array();
+  foreach ($events as $event) {
+    $event_subscriptions = isset($subscriptions[$event->eid]) ? array_filter($subscriptions[$event->eid]) : array();
+
+    foreach ($event_subscriptions as $sub_id) {
+      $subscription = notifications_load_subscription($sub_id);
+      if (empty($subscription)) {
+        continue;
+      }
+
+      // Stored views id.
+      $stored_views_id = NULL;
+      $fields = $subscription->get_fields();
+      foreach ($fields as $field) {
+        if ($field->field == 'stored_views_id') {
+          $stored_views_id = $field->intval;
+          break;
+        }
+      }
+      if (empty($stored_views_id)) {
+        $sub_simple[$event->eid][] = $sub_id;
+      }
+      else {
+        $sub_views[$sub_id][$stored_views_id][] = $event;
+      }
+    }
+    if (empty($sub_views)) {
+      continue;
+    }
+  }
+//  var_dump($sub_views, $sub_simple);
+//  var_dump(xdebug_get_function_stack());
+
+  // Stored views message.
+  $messages += notifications_stored_views_build_sub_views($template, $sub_views, $module);
+
+  return $messages;
+
+  // TODO: ?
+  return Notifications_Message::build_simple($template, $events, $subscriptions, $module);
+}
+
+/**
+ * .
+ */
+function notifications_stored_views_build_sub_views($template, $sub_views, $module = 'notifications') {
+  $messages = array();
+
+  // .
+  foreach ($sub_views as $sub_id => $events_array) {
+    foreach ($events_array as $stored_views_id => $events) {
+//      var_dump($stored_views_id, $events);
+
+      // Stored views.
+      // TODO: what if deleted.
+      $stored_views = notifications_stored_views_object_load($stored_views_id);
+      if (empty($stored_views)) {
+        continue;
+      }
+
+      // View.
+      $view = views_get_view($stored_views->view);
+      if (empty($view) || empty($view->display) || empty($view->display[$stored_views->display])) {
+        continue;
+      }
+
+      switch ($view->base_table) {
+        case 'node':
+          $message = notifications_stored_views_build_message_node($template, $events, $stored_views_id, $module);
+          break;
+
+        case 'feeds_data_syndication':
+          $message = notifications_stored_views_build_message_mn_data($template, $events, $stored_views_id, $module);
+          break;
+      }
+      if (!empty($message)) {
+//        var_dump($message);
+//        var_dump($message->body);
+//        print $message->body;
+//      $message->set_sender($event->uid); // TODO
+        $messages[] = $message;
+      }
+    }
+  }
+
+  return $messages;
+}
+
+/**
+ * Node.
+ */
+function notifications_stored_views_build_message_node($template, $events, $stored_views_id, $module = 'notifications') {
+  $oid_array = array();
+  foreach ($events as $event) {
+    if ($event->type == 'node' && !empty($event->oid)) {
+      $oid_array[] = (int)$event->oid;
+    }
+  }
+  if (empty($oid_array)) {
+    return;
+  }
+
+  // Load stored views.
+  $stored_views = notifications_stored_views_object_load($stored_views_id);
+  $view = views_get_view($stored_views->view);
+  $view->set_display($stored_views->display);
+  $view->set_exposed_input($stored_views->filters);
+
+  // Filter by nid.
+  $filters = $view->display_handler->get_option('filters');
+  $filters['nid_in'] = array(
+    'operator' => 'in',
+    'value' => $oid_array,
+    'id' => 'nid_in',
+    'table' => 'node',
+    'field' => 'nid_in',
+    'relationship' => 'none',
+  );
+  $view->display_handler->override_option('filters', $filters);
+
+  // Display all.
+  $view->display_handler->override_option('use_pager', 0);
+  $view->display_handler->override_option('items_per_page', 0);
+
+  // TODO: styles & fields.
+
+  // TODO: if 0 row: $message->discard ?
+  $content = $view->preview($stored_views->display, $stored_views->arguments);
+//  $content = $view->execute_display($stored_views->display, $stored_views->arguments);
+  $view->destroy();
+
+  // Build message.
+  $message = clone $template;
+  // TODO: subject, header, footer.
+  $message->subject = 'hello blah';
+  $message->body = $content;
+  return $message;
+}
+
+/**
+ * MN data.
+ */
+function notifications_stored_views_build_message_mn_data($template, $events, $stored_views_id, $module = 'notifications') {
+  $oid_array = array();
+  foreach ($events as $event) {
+    if ($event->type == 'mn_data' && !empty($event->oid)) {
+      $oid_array[] = (int)$event->oid;
+    }
+  }
+  if (empty($oid_array)) {
+    return;
+  }
+
+  // Load stored views.
+  $stored_views = notifications_stored_views_object_load($stored_views_id);
+  $view = views_get_view($stored_views->view);
+  $view->set_display($stored_views->display);
+  $view->set_exposed_input($stored_views->filters);
+
+  // Filter by nid.
+  $filters = $view->display_handler->get_option('filters');
+  $filters['id_in'] = array(
+    'operator' => 'in',
+    'value' => $oid_array,
+    'id' => 'id_in',
+    'table' => 'feeds_data_syndication',
+    'field' => 'id_in',
+    'relationship' => 'none',
+  );
+  $view->display_handler->override_option('filters', $filters);
+
+  // Styles.
+  $view->display_handler->override_option('style_plugin', 'notifications_stored_views');
+  $view->display_handler->override_option('row_plugin', 'notifications_stored_views');
+
+  // Fields.
+  // TODO: put into a new display?
+  $view->display_handler->override_option('fields', array(
+    'url' => array(
+      'label' => 'URL',
+      'alter' => array(
+        'alter_text' => 0,
+        'text' => '',
+        'make_link' => 0,
+        'path' => '',
+        'link_class' => '',
+        'alt' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'help' => '',
+        'trim' => 0,
+        'max_length' => '',
+        'word_boundary' => 1,
+        'ellipsis' => 1,
+        'strip_tags' => 0,
+        'html' => 0,
+      ),
+      'display_as_link' => 0,
+      'exclude' => 1,
+      'id' => 'url',
+      'table' => 'feeds_data_syndication',
+      'field' => 'url',
+      'relationship' => 'none',
+    ),
+    'title' => array(
+      'label' => '',
+      'alter' => array(
+        'alter_text' => 0,
+        'text' => '',
+        'make_link' => 1,
+        'path' => '[url]',
+        'link_class' => '',
+        'alt' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'help' => '',
+        'trim' => 0,
+        'max_length' => '',
+        'word_boundary' => 1,
+        'ellipsis' => 1,
+        'strip_tags' => 0,
+        'html' => 0,
+      ),
+      'exclude' => 0,
+      'id' => 'title',
+      'table' => 'feeds_data_syndication',
+      'field' => 'title',
+      'relationship' => 'none',
+    ),
+    'description' => array(
+      'label' => '',
+      'alter' => array(
+        'alter_text' => 1,
+        'text' => '',
+        'make_link' => 0,
+        'path' => '',
+        'link_class' => '',
+        'alt' => '',
+        'prefix' => '',
+        'suffix' => '',
+        'target' => '',
+        'help' => '',
+        'trim' => 1,
+        'max_length' => '500',
+        'word_boundary' => 1,
+        'ellipsis' => 1,
+        'strip_tags' => 0,
+        'html' => 1,
+      ),
+      'empty' => '',
+      'hide_empty' => 0,
+      'empty_zero' => 0,
+      'hilight_search' => 1,
+      'exclude' => 0,
+      'id' => 'description',
+      'table' => 'feeds_data_syndication',
+      'field' => 'description',
+      'relationship' => 'none',
+      'override' => array(
+        'button' => 'Override',
+      ),
+    ),
+  ));
+
+  // Display all.
+  $view->display_handler->override_option('use_pager', 0);
+  $view->display_handler->override_option('items_per_page', 0);
+
+  // Disable attachments.
+  $view->is_attachment = TRUE;
+
+  // TODO: if 0 row: $message->discard ?
+  $content = $view->preview($stored_views->display, $stored_views->arguments);
+  $view->destroy();
+
+  // Build message.
+  $message = clone $template;
+  // TODO: subject, header, footer.
+  $message->subject = 'hello blah';
+  $message->body = $content;
+  return $message;
+}
+
+/**
+ * Callback.
+ */
+function notifications_stored_views_object_load($stored_views_id) {
+  $cache = &messaging_static(__FUNCTION__);
+  if (!$cache || !array_key_exists($stored_views_id, $cache)) {
+    $stored_views = stored_views_id_load($stored_views_id);
+    if (!empty($stored_views)) {
+      $stored_views['stored_views_id'] = $stored_views['id'];
+      $stored_views = (object)$stored_views;
+      _notifications_stored_views_load_extra($stored_views);
+    }
+    $cache[$stored_views_id] = $stored_views;
+  }
+  return $cache[$stored_views_id];
+}
+
+/**
+ * Callback.
+ */
+function notifications_stored_views_object_format($stored_views_id, $html = FALSE) {
+  $title = t('Not found');
+
+  // Get title.
+  $stored_views = notifications_stored_views_object_load($stored_views_id);
+  if (empty($stored_views)) {
+    return $title;
+  }
+  $title = $stored_views->title;
+
+  // Link.
+  if ($html) {
+    // TODO: args.
+    $title = l($title, $stored_views->path);
+  }
+  return $title;
+}
+
+/**
+ * .
+ */
+function _notifications_stored_views_load_extra(&$stored_views) {
+  $view = views_get_view($stored_views->view);
+
+  // Base table.
+  $stored_views->views_base_table = $view->base_table;
+}
+
+/**
+ * UI.
+ */
+
+function notifications_stored_views_mn_core_formats_alter(&$links, $query = array()) {
+  // Put print the last.
+  $print = NULL;
+  if (!empty($links['print'])) {
+    $print = $links['print'];
+    unset($links['print']);
+  }
+
+  // Subscribe.
+  $link = notifications_stored_views_subscribe_link();
+  if (!empty($link['href'])) {
+    $title = '';
+    $parts = explode('/', $link['href']);
+    switch ($parts[1]) {
+      case 'subscribe':
+        $title = t('Subscribe');
+        break;
+      case 'unsubscribe':
+        $title = t('Unsubscribe');
+        break;
+    }
+    // TODO: icon.
+    $links['subscribe'] = array(
+      'title' => '<span class="icon"></span>'. $title,
+      'href' => $link['href'],
+      'html' => TRUE,
+      'query' => $query + (!empty($link['query']) ? $link['query'] : array()),
+    );
+  }
+
+  if (!empty($print)) {
+    $links['print'] = $print;
+  }
+}
+
+/**
+ * Get a subscribe link for current page view.
+ */
+function notifications_stored_views_subscribe_link() {
+  if (!user_access('subscribe to stored views')) {
+    return;
+  }
+
+  // Load / save stored views.
+  $page_view = _stored_views_get_page_view();
+  if (empty($page_view)) {
+    return;
+  }
+  $stored_views = stored_views_load($page_view);
+  if (empty($stored_views)) {
+    $page_view['created'] = time();
+    $page_view['status'] = 0;
+    stored_views_save($page_view);
+    $stored_views = stored_views_load($page_view);
+  }
+  if (empty($stored_views)) {
+    return;
+  }
+
+  // Get a link.
+  $links = notifications_ui_subscribe_links('stored_views', $stored_views['id']);
+  if (empty($links)) {
+    return;
+  }
+  return reset($links);
+}
