@@ -236,11 +236,11 @@ function notifications_stored_views_build_sub_views($template, $sub_views, $modu
 
       switch ($view->base_table) {
         case 'node':
-          $message = notifications_stored_views_build_message_node($template, $events, $stored_views_id, $module);
+          $message = notifications_stored_views_build_message_node($template, $events, $sub_id, $stored_views_id, $module);
           break;
 
         case 'feeds_data_syndication':
-          $message = notifications_stored_views_build_message_mn_data($template, $events, $stored_views_id, $module);
+          $message = notifications_stored_views_build_message_mn_data($template, $events, $sub_id, $stored_views_id, $module);
           break;
       }
       if (!empty($message)) {
@@ -259,7 +259,7 @@ function notifications_stored_views_build_sub_views($template, $sub_views, $modu
 /**
  * Node.
  */
-function notifications_stored_views_build_message_node($template, $events, $stored_views_id, $module = 'notifications') {
+function notifications_stored_views_build_message_node($template, $events, $sub_id, $stored_views_id, $module = 'notifications') {
   $oid_array = array();
   foreach ($events as $event) {
     if ($event->type == 'node' && !empty($event->oid)) {
@@ -310,16 +310,46 @@ function notifications_stored_views_build_message_node($template, $events, $stor
 /**
  * MN data.
  */
-function notifications_stored_views_build_message_mn_data($template, $events, $stored_views_id, $module = 'notifications') {
-  $oid_array = array();
+function notifications_stored_views_build_message_mn_data($template, $events, $sub_id, $stored_views_id, $module = 'notifications') {
+  // Build message.
+  $message = clone $template;
+
+  $subscription = notifications_load_subscription($sub_id);
+//  var_dump($subscription);
+
+  $send_method = $template->method;
+  $language = $template->get_language();
+//  var_dump($send_method, $destination, $account, $language);
+
+  // Start the message by cloning the template
+//  $message = clone $template;
+//  $message->add_event($event, $subscriptions);
+  // Create message. Do all this in one replacemente
+
+  $oid_array = $parts = array();
   foreach ($events as $event) {
     if ($event->type == 'mn_data' && !empty($event->oid)) {
       $oid_array[] = (int)$event->oid;
+
+      $message->add_event($event, array($sub_id));
+
+      if (empty($parts)) {
+        $parts['subject'] = $event->message_part('subject', $send_method, $language, $module);
+        $parts['header'] = $event->message_part('header', $send_method, $language, $module);
+        $parts['event'] = $event->message_part('main', $send_method, $language, $module);
+        $parts['footer'] = $event->message_part('footer', $send_method, $language, $module);
+      }
     }
   }
   if (empty($oid_array)) {
     return;
   }
+
+  $destination = $template->get_destination();
+  $account = $template->get_user();
+  $objects = array('destination' => $destination, 'user' => $account, 'subscription' => $subscription);
+  $text = messaging_template_text_replace($parts, $objects, $language);
+//  var_dump($text);
 
   // Load stored views.
   $stored_views = notifications_stored_views_object_load($stored_views_id);
@@ -443,8 +473,6 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
   $content = $view->preview($stored_views->display, $stored_views->arguments);
   $view->destroy();
 
-  // Build message.
-  $message = clone $template;
   // TODO: subject, header, footer.
   $message->subject = 'hello blah';
   $message->body = $content;
@@ -483,8 +511,15 @@ function notifications_stored_views_object_format($stored_views_id, $html = FALS
 
   // Link.
   if ($html) {
-    // TODO: args.
-    $title = l($title, $stored_views->path);
+    $options = array();
+    // Path query.
+    if (module_exists('searchlight')) {
+      $key = variable_get('searchlight_facet_key', 'sl');
+      if (!empty($stored_views->filters[$key])) {
+        $options['query'][$key] = $stored_views->filters[$key];
+      }
+    }
+    $title = l($title, $stored_views->path, $options);
   }
   return $title;
 }
