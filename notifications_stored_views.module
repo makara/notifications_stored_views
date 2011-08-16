@@ -1,6 +1,11 @@
 <?php
 /**
  * @file
+ *
+ * TODO: clean events?
+ * TODO: token
+ * TODO: views style
+ * TODO: rebuild search
  */
 
 /**
@@ -20,6 +25,48 @@ function notifications_stored_views_perm() {
   return array(
     'subscribe to stored views',
   );
+}
+
+/**
+ * Implementation of hook_notifications_templates().
+ */
+function notifications_stored_views_notifications_templates($op, $type = 'all', $language = NULL) {
+  switch ($op) {
+    case 'info':
+      // TODO: a new template
+      break;
+
+    case 'parts':
+      break;
+
+    case 'defaults':
+      break;
+
+    case 'tokens':
+      $args = explode('-', $type);
+      $tokens = array();
+      switch ($type) {
+        default:
+          break;
+      }
+      return $tokens;
+  }
+}
+
+/**
+ * Implementation of hook_token_list().
+ */
+function notifications_stored_views_token_list($type = 'all') {
+  $tokens = array();
+  return $tokens;
+}
+
+/**
+ * Implementation of hook_token_values().
+ */
+function notifications_stored_views_token_values($type, $object = NULL, $options = array()) {
+  switch ($type) {
+  }
 }
 
 /**
