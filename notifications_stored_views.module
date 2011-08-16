@@ -3,7 +3,6 @@
  * @file
  *
  * TODO: clean events?
- * TODO: token
  * TODO: views style
  * TODO: rebuild search
  */
@@ -33,7 +32,7 @@ function notifications_stored_views_perm() {
 function notifications_stored_views_notifications_templates($op, $type = 'all', $language = NULL) {
   switch ($op) {
     case 'info':
-      // TODO: a new template
+      // TODO: a new template?
       break;
 
     case 'parts':
@@ -43,10 +42,11 @@ function notifications_stored_views_notifications_templates($op, $type = 'all', 
       break;
 
     case 'tokens':
-      $args = explode('-', $type);
       $tokens = array();
       switch ($type) {
+        // TODO: for which types?
         default:
+          $tokens[] = 'stored-views';
           break;
       }
       return $tokens;
@@ -58,6 +58,12 @@ function notifications_stored_views_notifications_templates($op, $type = 'all', 
  */
 function notifications_stored_views_token_list($type = 'all') {
   $tokens = array();
+
+  if ($type == 'stored-views' || $type == 'all') {
+    $tokens['stored-views']['stored-views-title'] = t('The stored views title.');
+    $tokens['stored-views']['stored-views-url'] = t('The stored views url.');
+  }
+
   return $tokens;
 }
 
@@ -65,8 +71,24 @@ function notifications_stored_views_token_list($type = 'all') {
  * Implementation of hook_token_values().
  */
 function notifications_stored_views_token_values($type, $object = NULL, $options = array()) {
-  switch ($type) {
+  $values = array();
+
+  if ($type == 'stored-views' && !empty($object->stored_views_id)) {
+    // Title.
+    $values['stored-views-title'] = $object->title;
+
+    // Url.
+    $options = array('absolute' => TRUE);
+    if (module_exists('searchlight')) {
+      $key = variable_get('searchlight_facet_key', 'sl');
+      if (!empty($object->filters[$key])) {
+        $options['query'][$key] = $object->filters[$key];
+      }
+    }
+    $values['stored-views-url'] = url($object->path, $options);
   }
+
+  return $values;
 }
 
 /**
@@ -361,8 +383,14 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
   // Build message.
   $message = clone $template;
 
+  // Load subscription.
+  // TODO: if empty.
   $subscription = notifications_load_subscription($sub_id);
 //  var_dump($subscription);
+
+  // Load stored views.
+  // TODO: if empty.
+  $stored_views = notifications_stored_views_object_load($stored_views_id);
 
   $send_method = $template->method;
   $language = $template->get_language();
@@ -394,12 +422,11 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
 
   $destination = $template->get_destination();
   $account = $template->get_user();
-  $objects = array('destination' => $destination, 'user' => $account, 'subscription' => $subscription);
+  $objects = array('destination' => $destination, 'user' => $account, 'subscription' => $subscription, 'stored-views' => $stored_views);
   $text = messaging_template_text_replace($parts, $objects, $language);
 //  var_dump($text);
 
-  // Load stored views.
-  $stored_views = notifications_stored_views_object_load($stored_views_id);
+  // Build view.
   $view = views_get_view($stored_views->view);
   $view->set_display($stored_views->display);
   $view->set_exposed_input($stored_views->filters);
