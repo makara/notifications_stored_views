@@ -62,6 +62,7 @@ function notifications_stored_views_token_list($type = 'all') {
   if ($type == 'stored-views' || $type == 'all') {
     $tokens['stored-views']['stored-views-title'] = t('The stored views title.');
     $tokens['stored-views']['stored-views-url'] = t('The stored views url.');
+    $tokens['stored-views']['stored-views-content'] = t('The stored views content.');
   }
 
   return $tokens;
@@ -86,6 +87,14 @@ function notifications_stored_views_token_values($type, $object = NULL, $options
       }
     }
     $values['stored-views-url'] = url($object->path, $options);
+
+    // Content.
+    if (!empty($object->stored_views_content)) {
+      $values['stored-views-content'] = $object->stored_views_content;
+    }
+    else {
+      $values['stored-views-content'] = '';
+    }
   }
 
   return $values;
@@ -420,18 +429,37 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
     return;
   }
 
-  $destination = $template->get_destination();
-  $account = $template->get_user();
-  $objects = array('destination' => $destination, 'user' => $account, 'subscription' => $subscription, 'stored-views' => $stored_views);
-  $text = messaging_template_text_replace($parts, $objects, $language);
-//  var_dump($text);
-
   // Build view.
   $view = views_get_view($stored_views->view);
   $view->set_display($stored_views->display);
+
+  // Searchlight.
+  if (module_exists('searchlight')) {
+    $key = variable_get('searchlight_facet_key', 'sl');
+    if (!empty($stored_views->filters[$key])) {
+      $packed = $stored_views->filters[$key];
+      // TODO: do I need to?
+      if (isset($_GET[$key])) {
+        unset($_GET[$key]);
+      }
+      $values = searchlight_environment_unpack($packed);
+      if (!empty($values['environment']) && $environment = searchlight_environment_load($values['environment'])) {
+        $environment->initValues($values);
+        searchlight_environment_active($environment);
+      }
+      unset($stored_views->filters[$key]);
+    }
+
+    // TODO: a real fix.
+    if (!empty($stored_views->filters['search']) && is_array($stored_views->filters['search'])) {
+      $stored_views->filters['search'] = reset($stored_views->filters['search']);
+    }
+  }
+
+  // Exposed input.
   $view->set_exposed_input($stored_views->filters);
 
-  // Filter by nid.
+  // Filter by data id.
   $filters = $view->display_handler->get_option('filters');
   $filters['id_in'] = array(
     'operator' => 'in',
@@ -544,12 +572,28 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
   $view->is_attachment = TRUE;
 
   // TODO: if 0 row: $message->discard ?
-  $content = $view->preview($stored_views->display, $stored_views->arguments);
+  $stored_views->stored_views_content = $view->preview($stored_views->display, $stored_views->arguments);
   $view->destroy();
 
   // TODO: subject, header, footer.
-  $message->subject = 'hello blah';
-  $message->body = $content;
+//  $message->subject = 'hello blah';
+//  $message->body = $content;
+
+  $destination = $template->get_destination();
+  $account = $template->get_user();
+  $objects = array('destination' => $destination, 'user' => $account, 'subscription' => $subscription, 'stored-views' => $stored_views);
+  $text = messaging_template_text_replace($parts, $objects, $language);
+//  var_dump($text);
+
+  $message->subject = $text['subject'];
+  unset($text['subject']);
+  $message->body = $text;
+  $message->text_parts = $parts;
+
+  // testing.
+//  $message->render();
+//  var_dump($message->params, $message);
+
   return $message;
 }
 
