@@ -1,10 +1,6 @@
 <?php
 /**
  * @file
- *
- * TODO: clean events?
- * TODO: views style
- * TODO: rebuild search
  */
 
 /**
@@ -31,16 +27,6 @@ function notifications_stored_views_perm() {
  */
 function notifications_stored_views_notifications_templates($op, $type = 'all', $language = NULL) {
   switch ($op) {
-    case 'info':
-      // TODO: a new template?
-      break;
-
-    case 'parts':
-      break;
-
-    case 'defaults':
-      break;
-
     case 'tokens':
       $tokens = array();
       switch ($type) {
@@ -116,15 +102,6 @@ function notifications_stored_views_notifications($op) {
         'access' => 'subscribe to stored views',
         'fields' => array('stored_views_id'),
       );
-
-      // MN data views.
-      $types['stored_views_mn_data'] = array(
-        'event_type' => 'mn_data',
-        'title' => t('Feed display'),
-        'description' => t('.'), // TODO
-        'access' => 'subscribe to stored views',
-        'fields' => array('stored_views_id'),
-      );
       return $types;
 
     case 'subscription fields':
@@ -154,7 +131,7 @@ function notifications_stored_views_notifications($op) {
       $info = array();
 
       // .
-      // TODO: ban other build methods.
+      // TODO: ban other build methods, or move to somewhere else.
       $info['stored_views'] = array(
         'type' => 'stored_views',
         'name' => t('Stored views'),
@@ -176,15 +153,7 @@ function notifications_stored_views_notifications_event($op, $event, $account = 
 
       switch ($event->typekey) {
         case 'node-insert':
-        case 'mn_data-insert':
-          // All IDs.
-          // TODO: cache?
-          $id_array = array();
-          $result = db_query('SELECT id FROM {stored_views} ORDER BY id ASC');
-          while ($obj = db_fetch_object($result)) {
-            $id_array[] = $obj->id;
-          }
-          $query[]['fields'] = array('stored_views_id' => $id_array);
+          $query[]['fields'] = array('stored_views_id' => notifications_stored_views_get_all_ids());
           break;
       }
 
@@ -429,155 +398,9 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
     return;
   }
 
-  // Build view.
-  $view = views_get_view($stored_views->view);
-  $view->set_display($stored_views->display);
-
-  // Searchlight.
-  if (module_exists('searchlight')) {
-    $key = variable_get('searchlight_facet_key', 'sl');
-    if (!empty($stored_views->filters[$key])) {
-      $packed = $stored_views->filters[$key];
-      // TODO: do I need to?
-      if (isset($_GET[$key])) {
-        unset($_GET[$key]);
-      }
-      $values = searchlight_environment_unpack($packed);
-      if (!empty($values['environment']) && $environment = searchlight_environment_load($values['environment'])) {
-        $environment->initValues($values);
-        searchlight_environment_active($environment);
-      }
-      unset($stored_views->filters[$key]);
-    }
-
-    // TODO: a real fix.
-    if (!empty($stored_views->filters['search']) && is_array($stored_views->filters['search'])) {
-      $stored_views->filters['search'] = reset($stored_views->filters['search']);
-    }
-  }
-
-  // Exposed input.
-  $view->set_exposed_input($stored_views->filters);
-
-  // Filter by data id.
-  $filters = $view->display_handler->get_option('filters');
-  $filters['id_in'] = array(
-    'operator' => 'in',
-    'value' => $oid_array,
-    'id' => 'id_in',
-    'table' => 'feeds_data_syndication',
-    'field' => 'id_in',
-    'relationship' => 'none',
-  );
-  $view->display_handler->override_option('filters', $filters);
-
-  // Styles.
-  $view->display_handler->override_option('style_plugin', 'notifications_stored_views');
-  $view->display_handler->override_option('row_plugin', 'notifications_stored_views');
-
-  // Fields.
-  // TODO: put into a new display?
-  $view->display_handler->override_option('fields', array(
-    'url' => array(
-      'label' => 'URL',
-      'alter' => array(
-        'alter_text' => 0,
-        'text' => '',
-        'make_link' => 0,
-        'path' => '',
-        'link_class' => '',
-        'alt' => '',
-        'prefix' => '',
-        'suffix' => '',
-        'help' => '',
-        'trim' => 0,
-        'max_length' => '',
-        'word_boundary' => 1,
-        'ellipsis' => 1,
-        'strip_tags' => 0,
-        'html' => 0,
-      ),
-      'display_as_link' => 0,
-      'exclude' => 1,
-      'id' => 'url',
-      'table' => 'feeds_data_syndication',
-      'field' => 'url',
-      'relationship' => 'none',
-    ),
-    'title' => array(
-      'label' => '',
-      'alter' => array(
-        'alter_text' => 0,
-        'text' => '',
-        'make_link' => 1,
-        'path' => '[url]',
-        'link_class' => '',
-        'alt' => '',
-        'prefix' => '',
-        'suffix' => '',
-        'help' => '',
-        'trim' => 0,
-        'max_length' => '',
-        'word_boundary' => 1,
-        'ellipsis' => 1,
-        'strip_tags' => 0,
-        'html' => 0,
-      ),
-      'exclude' => 0,
-      'id' => 'title',
-      'table' => 'feeds_data_syndication',
-      'field' => 'title',
-      'relationship' => 'none',
-    ),
-    'description' => array(
-      'label' => '',
-      'alter' => array(
-        'alter_text' => 1,
-        'text' => '',
-        'make_link' => 0,
-        'path' => '',
-        'link_class' => '',
-        'alt' => '',
-        'prefix' => '',
-        'suffix' => '',
-        'target' => '',
-        'help' => '',
-        'trim' => 1,
-        'max_length' => '500',
-        'word_boundary' => 1,
-        'ellipsis' => 1,
-        'strip_tags' => 0,
-        'html' => 1,
-      ),
-      'empty' => '',
-      'hide_empty' => 0,
-      'empty_zero' => 0,
-      'hilight_search' => 1,
-      'exclude' => 0,
-      'id' => 'description',
-      'table' => 'feeds_data_syndication',
-      'field' => 'description',
-      'relationship' => 'none',
-      'override' => array(
-        'button' => 'Override',
-      ),
-    ),
-  ));
-
-  // Display all.
-  $view->display_handler->override_option('use_pager', 0);
-  $view->display_handler->override_option('items_per_page', 0);
-
-  // Disable attachments.
-  $view->is_attachment = TRUE;
-
-  // TODO: if 0 row: $message->discard ?
-  $stored_views->stored_views_content = $view->preview($stored_views->display, $stored_views->arguments);
-  $view->destroy();
-
-  // TODO: subject, header, footer.
-//  $message->subject = 'hello blah';
-//  $message->body = $content;
+  // TODO: if 0 row: $message->discard ? or $message->set_error() ?
+  list($stored_views->stored_views_content, $stored_views->stored_views_content_total) = notifications_stored_views_get_content($stored_views, $oid_array);
+//  var_dump($stored_views);
 
   $destination = $template->get_destination();
   $account = $template->get_user();
@@ -592,7 +415,7 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
 
   // testing.
 //  $message->render();
-//  var_dump($message->params, $message);
+//  var_dump($message);
 
   return $message;
 }
@@ -607,7 +430,7 @@ function notifications_stored_views_object_load($stored_views_id) {
     if (!empty($stored_views)) {
       $stored_views['stored_views_id'] = $stored_views['id'];
       $stored_views = (object)$stored_views;
-      _notifications_stored_views_load_extra($stored_views);
+      notifications_stored_views_load_extra($stored_views);
     }
     $cache[$stored_views_id] = $stored_views;
   }
@@ -640,16 +463,6 @@ function notifications_stored_views_object_format($stored_views_id, $html = FALS
     $title = l($title, $stored_views->path, $options);
   }
   return $title;
-}
-
-/**
- * .
- */
-function _notifications_stored_views_load_extra(&$stored_views) {
-  $view = views_get_view($stored_views->view);
-
-  // Base table.
-  $stored_views->views_base_table = $view->base_table;
 }
 
 /**
@@ -721,4 +534,174 @@ function notifications_stored_views_subscribe_link() {
     return;
   }
   return reset($links);
+}
+
+/**
+ * APIs and Private.
+ */
+
+/**
+ * Get all stored views id.
+ */
+function notifications_stored_views_get_all_ids($reset = FALSE) {
+  static $id_array = NULL;
+
+  if (!isset($id_array) || $reset) {
+    $id_array = array();
+    $result = db_query('SELECT id FROM {stored_views} ORDER BY id ASC');
+    while ($obj = db_fetch_object($result)) {
+      $id_array[] = $obj->id;
+    }
+  }
+
+  return $id_array;
+}
+
+/**
+ * .
+ */
+function notifications_stored_views_load_extra(&$stored_views) {
+  $view = views_get_view($stored_views->view);
+
+  // Base table.
+  $stored_views->views_base_table = $view->base_table;
+}
+
+/**
+ * .
+ */
+function notifications_stored_views_get_content($stored_views, $oid_array = array()) {
+  if (empty($oid_array)) {
+    return array('', 0);
+  }
+
+  // Build view.
+  $view = views_get_view($stored_views->view);
+  $view->set_display($stored_views->display);
+
+  // Searchlight.
+  // @see function searchlight_environment_init().
+  if (module_exists('searchlight')) {
+    $key = variable_get('searchlight_facet_key', 'sl');
+    if (!empty($stored_views->filters[$key])) {
+      $packed = $stored_views->filters[$key];
+      // TODO: do I need to?
+      if (isset($_GET[$key])) {
+        unset($_GET[$key]);
+      }
+      $values = searchlight_environment_unpack($packed);
+      if (!empty($values['environment']) && $environment = searchlight_environment_load($values['environment'])) {
+        $environment->initValues($values);
+        searchlight_environment_active($environment);
+      }
+      else {
+        searchlight_environment_active(NULL, NULL, NULL, TRUE);
+      }
+      unset($stored_views->filters[$key]);
+    }
+
+    // TODO: a real fix.
+    if (!empty($stored_views->filters['search']) && is_array($stored_views->filters['search'])) {
+      $stored_views->filters['search'] = reset($stored_views->filters['search']);
+    }
+  }
+
+  // Exposed input.
+  $view->set_exposed_input($stored_views->filters);
+
+  // Filter by id.
+  $filters = $view->display_handler->get_option('filters');
+  $filters['id_in'] = array(
+    'operator' => 'in',
+    'value' => $oid_array,
+    'id' => 'id_in',
+    'table' => 'feeds_data_syndication',
+    'field' => 'id_in',
+    'relationship' => 'none',
+  );
+  $view->display_handler->override_option('filters', $filters);
+
+  // Styles.
+  $view->display_handler->override_option('style_plugin', 'notifications_stored_views');
+  $view->display_handler->override_option('row_plugin', 'notifications_stored_views');
+
+  // Fields.
+  // TODO: put into a new display?
+  $view->display_handler->override_option('fields', array(
+    'url' => array(
+      'label' => '',
+      'alter' => array(),
+      'display_as_link' => 0,
+      'exclude' => 1,
+      'id' => 'url',
+      'table' => 'feeds_data_syndication',
+      'field' => 'url',
+      'relationship' => 'none',
+    ),
+    'title' => array(
+      'label' => '',
+      'alter' => array(
+        'make_link' => 1,
+        'path' => '[url]',
+      ),
+      'exclude' => 0,
+      'id' => 'title',
+      'table' => 'feeds_data_syndication',
+      'field' => 'title',
+      'relationship' => 'none',
+    ),
+    'description' => array(
+      'label' => '',
+      'alter' => array(
+        'trim' => 1,
+        'max_length' => '500',
+        'word_boundary' => 1,
+        'ellipsis' => 1,
+        'strip_tags' => 0,
+        'html' => 1,
+      ),
+      'empty' => '',
+      'hide_empty' => 0,
+      'empty_zero' => 0,
+      'hilight_search' => 1,
+      'exclude' => 0,
+      'id' => 'description',
+      'table' => 'feeds_data_syndication',
+      'field' => 'description',
+      'relationship' => 'none',
+    ),
+    'timestamp' => array(
+      'label' => '',
+      'alter' => array(),
+      'date_format' => 'custom',
+      'custom_date_format' => 'F j, Y at g:i A',
+      'exclude' => 0,
+      'id' => 'timestamp',
+      'table' => 'feeds_data_syndication',
+      'field' => 'timestamp',
+      'relationship' => 'none',
+    ),
+  ));
+
+  // 100 items max.
+  $view->display_handler->override_option('use_pager', 0);
+  $view->display_handler->override_option('items_per_page', 100);
+
+  // Run count query.
+  $view->get_total_rows = TRUE;
+
+  // Disable attachments.
+  // TODO: ?
+  $view->is_attachment = TRUE;
+
+  // Get content.
+  $content = $view->preview($stored_views->display, $stored_views->arguments);
+  $content_total = $view->total_rows;
+
+  // Clean up.
+  $view->destroy();
+  searchlight_environment_active(NULL, NULL, NULL, TRUE);
+  searchlight_environment_load(NULL, TRUE);
+
+  return array($content, $content_total);
 }
