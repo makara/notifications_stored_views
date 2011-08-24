@@ -399,7 +399,7 @@ function notifications_stored_views_build_message_mn_data($template, $events, $s
   }
 
   // TODO: if 0 row: $message->discard ? or $message->set_error() ?
-  list($stored_views->stored_views_content, $stored_views->stored_views_content_total) = notifications_stored_views_get_content($stored_views, $oid_array);
+  list($stored_views->stored_views_content, $stored_views->stored_views_content_total) = notifications_stored_views_get_content($stored_views, $oid_array, 'mn_data');
 //  var_dump($stored_views);
 
   $destination = $template->get_destination();
@@ -570,7 +570,7 @@ function notifications_stored_views_load_extra(&$stored_views) {
 /**
  * .
  */
-function notifications_stored_views_get_content($stored_views, $oid_array = array()) {
+function notifications_stored_views_get_content($stored_views, $oid_array = array(), $event_type = '') {
   if (empty($oid_array)) {
     return array('', 0);
   }
@@ -626,62 +626,12 @@ function notifications_stored_views_get_content($stored_views, $oid_array = arra
   $view->display_handler->override_option('row_plugin', 'notifications_stored_views');
 
   // Fields.
-  // TODO: put into a new display?
-  $view->display_handler->override_option('fields', array(
-    'url' => array(
-      'label' => '',
-      'alter' => array(),
-      'display_as_link' => 0,
-      'exclude' => 1,
-      'id' => 'url',
-      'table' => 'feeds_data_syndication',
-      'field' => 'url',
-      'relationship' => 'none',
-    ),
-    'title' => array(
-      'label' => '',
-      'alter' => array(
-        'make_link' => 1,
-        'path' => '[url]',
-      ),
-      'exclude' => 0,
-      'id' => 'title',
-      'table' => 'feeds_data_syndication',
-      'field' => 'title',
-      'relationship' => 'none',
-    ),
-    'description' => array(
-      'label' => '',
-      'alter' => array(
-        'trim' => 1,
-        'max_length' => '500',
-        'word_boundary' => 1,
-        'ellipsis' => 1,
-        'strip_tags' => 0,
-        'html' => 1,
-      ),
-      'empty' => '',
-      'hide_empty' => 0,
-      'empty_zero' => 0,
-      'hilight_search' => 1,
-      'exclude' => 0,
-      'id' => 'description',
-      'table' => 'feeds_data_syndication',
-      'field' => 'description',
-      'relationship' => 'none',
-    ),
-    'timestamp' => array(
-      'label' => '',
-      'alter' => array(),
-      'date_format' => 'custom',
-      'custom_date_format' => 'F j, Y at g:i A',
-      'exclude' => 0,
-      'id' => 'timestamp',
-      'table' => 'feeds_data_syndication',
-      'field' => 'timestamp',
-      'relationship' => 'none',
-    ),
-  ));
+  if (!empty($event_type)) {
+    $fields = module_invoke_all('notifications_stored_views_fields', $event_type, $view->display_handler->get_option('fields'));
+    if (!empty($fields)) {
+      $view->display_handler->override_option('fields', $fields);
+    }
+  }
 
   // 100 items max.
   $view->display_handler->override_option('use_pager', 0);
@@ -691,7 +641,6 @@ function notifications_stored_views_get_content($stored_views, $oid_array = arra
   $view->get_total_rows = TRUE;
 
   // Disable attachments.
-  // TODO: ?
   $view->is_attachment = TRUE;
 
   // Get content.
